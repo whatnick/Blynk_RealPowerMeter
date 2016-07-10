@@ -95,6 +95,9 @@ int sampleI;
 double offsetV;                          //Low-pass filter output
 double offsetI;                          //Low-pass filter output
 
+//Scaling for final calibration
+double vmult=1.0,imult=1.0,phmult=1.0;
+
 double realPower,
        apparentPower,
        powerFactor,
@@ -223,20 +226,8 @@ void calcVI(unsigned int crossings, unsigned int timeout)
   //--------------------------------------------------------------------------------------
 }
 
-
-void setup() {
-  Serial.begin(9600);
-
-  pinMode(LED_PIN, OUTPUT);
-  digitalWrite(LED_PIN, LOW); // Turn off blue LED
-  rgb.begin(); // Set up WS2812
-  setLED(0, 0, 32); // LED blue
-
-  ads.setGain(GAIN_ONE);        // 1x gain   +/- 4.096V  1 bit = 0.125mV
-  ads.begin();
-
-  Wire.begin();
-
+void readBlynkConfig()
+{
   //clean FS, for testing
   //SPIFFS.format();
 
@@ -272,37 +263,18 @@ void setup() {
     //Serial.println("failed to mount FS");
   }
   //end read
+}
 
-  // The extra parameters to be configured (can be either global or just in the setup)
-  // After connecting, parameter.getValue() will get you the configured value
-  // id/name placeholder/prompt default length
-  WiFiManagerParameter custom_blynk_token("blynk", "blynk token", auth, 33);
-
-  //Use wifi manager to get config
-  WiFiManager wifiManager;
-  wifiManager.setDebugOutput(false);
-  
-  //set config save notify callback
-  wifiManager.setSaveConfigCallback(saveConfigCallback);
-
-  //add all your parameters here
-  wifiManager.addParameter(&custom_blynk_token);
-
-  //first parameter is name of access point, second is the password
-  wifiManager.startConfigPortal("Blynkwhatnick", "EnergyMonitor");
-
-  //if you get here you have connected to the WiFi
-  Serial.println("connected...yeey :)");
-
-  //read updated parameters
-  strcpy(auth, custom_blynk_token.getValue());
-
+void saveBlynkConfig()
+{
   //save the custom parameters to FS
   if (shouldSaveConfig) {
     //Serial.println("saving config");
     DynamicJsonBuffer jsonBuffer;
     JsonObject& json = jsonBuffer.createObject();
-    json["auth"] = auth;
+    json["vmult"] = vmult;
+    json["imult"] = vmult;
+    json["phmult"] = vmult;
 
     File configFile = SPIFFS.open("/config.json", "w");
     if (!configFile) {
@@ -314,6 +286,113 @@ void setup() {
     configFile.close();
     //end save
   }
+}
+
+void readMultConfig()
+{
+  //clean FS, for testing
+  //SPIFFS.format();
+
+  //read configuration from FS json
+  //Serial.println("mounting FS...");
+
+  if (SPIFFS.begin()) {
+    //Serial.println("mounted file system");
+    if (SPIFFS.exists("/mult.json")) {
+      //file exists, reading and loading
+      //Serial.println("reading config file");
+      File configFile = SPIFFS.open("/mult.json", "r");
+      if (configFile) {
+        //Serial.println("opened config file");
+        size_t size = configFile.size();
+        // Allocate a buffer to store contents of the file.
+        std::unique_ptr<char[]> buf(new char[size]);
+
+        configFile.readBytes(buf.get(), size);
+        DynamicJsonBuffer jsonBuffer;
+        JsonObject& json = jsonBuffer.parseObject(buf.get());
+        json.printTo(Serial);
+        if (json.success()) {
+          //Serial.println("\nparsed json");
+          vmult = json["vmult"];
+          imult = json["imult"];
+          phmult = json["phmult"];
+        } else {
+          //Serial.println("failed to load json config");
+        }
+      }
+    }
+  } else {
+    //Serial.println("failed to mount FS");
+  }
+  //end read
+}
+
+void saveMultConfig()
+{
+  //save the custom parameters to FS
+  if (shouldSaveConfig) {
+    //Serial.println("saving config");
+    DynamicJsonBuffer jsonBuffer;
+    JsonObject& json = jsonBuffer.createObject();
+    json["vmult"] = vmult;
+    json["imult"] = imult;
+    json["phmult"] = phmult;
+
+    File configFile = SPIFFS.open("/mult.json", "w");
+    if (!configFile) {
+      //Serial.println("failed to open config file for writing");
+    }
+
+    json.printTo(Serial);
+    json.printTo(configFile);
+    configFile.close();
+    //end save
+  }
+}
+
+void setup() {
+  Serial.begin(9600);
+
+  pinMode(LED_PIN, OUTPUT);
+  digitalWrite(LED_PIN, LOW); // Turn off blue LED
+  rgb.begin(); // Set up WS2812
+  setLED(0, 0, 32); // LED blue
+
+  ads.setGain(GAIN_ONE);        // 1x gain   +/- 4.096V  1 bit = 0.125mV
+  ads.begin();
+
+  Wire.begin();
+
+  //Read previous config
+  readBlynkConfig();
+  readMultConfig();
+
+  // The extra parameters to be configured (can be either global or just in the setup)
+  // After connecting, parameter.getValue() will get you the configured value
+  // id/name placeholder/prompt default length
+  WiFiManagerParameter custom_blynk_token("blynk", "blynk token", auth, 33);
+
+  //Use wifi manager to get config
+  WiFiManager wifiManager;
+  wifiManager.setDebugOutput(false);
+
+  //set config save notify callback
+  wifiManager.setSaveConfigCallback(saveConfigCallback);
+
+  //add all your parameters here
+  wifiManager.addParameter(&custom_blynk_token);
+
+  //first parameter is name of access point, second is the password
+  wifiManager.autoConnect("Blynkwhatnick", "EnergyMonitor");
+
+  //if you get here you have connected to the WiFi
+  Serial.println("connected...yeey :)");
+
+  //read updated parameters
+  strcpy(auth, custom_blynk_token.getValue());
+
+  saveBlynkConfig();
 
   // Initialize Blynk, and wait for a connection before doing anything else
   Serial.println("Connecting to Blynk Server");
@@ -328,13 +407,19 @@ void setup() {
 
 int lastTick = 0;
 void loop() {
-  measureVI();
+  
   Blynk.run(); // Initiates Blynk
-
-  if ((millis() - lastTick > 60000)) { //60000 - 1 minute
+  if ((millis() - lastTick > 10000)) { //60000 - 1 minute
+    measureVI();
     lastTick = millis();
     Serial.print("Vrms:");
-    Serial.println(Vrms);
+    Serial.println(Vrms*vmult);
+    Serial.print("Irms:");
+    Serial.println(Irms*imult);
+    Serial.print("Power:");
+    Serial.println(realPower * vmult * imult);
+    Serial.print("p.f.:");
+    Serial.println(powerFactor * phmult);
   }
   yield();
 }
@@ -347,10 +432,10 @@ BLYNK_CONNECTED()
     // Two options here. Either sync values from phone to Blynk Board:
     //Blynk.syncAll(); // Uncomment to enable.
     // Or set phone variables to default values of the globals:
-    Blynk.virtualWrite(VIRTUAL_POWER, realPower);
-    Blynk.virtualWrite(VIRTUAL_CURRENT, Irms);
-    Blynk.virtualWrite(VIRTUAL_VOLTAGE, Vrms);
-    Blynk.virtualWrite(VIRTUAL_PF, powerFactor);
+    Blynk.virtualWrite(VIRTUAL_POWER, realPower * vmult * imult);
+    Blynk.virtualWrite(VIRTUAL_CURRENT, Irms * imult);
+    Blynk.virtualWrite(VIRTUAL_VOLTAGE, Vrms * vmult);
+    Blynk.virtualWrite(VIRTUAL_PF, powerFactor * phmult);
 
     // Print a splash screen:
     lcd.clear();
@@ -364,11 +449,38 @@ void measureVI()
   calcVI(20, 2000);
 
   // Write the values to Blynk:
-  Blynk.virtualWrite(VIRTUAL_POWER, realPower);
-  Blynk.virtualWrite(VIRTUAL_CURRENT, Irms);
-  Blynk.virtualWrite(VIRTUAL_VOLTAGE, Vrms);
-  Blynk.virtualWrite(VIRTUAL_PF, powerFactor);
+  Blynk.virtualWrite(VIRTUAL_POWER, realPower * vmult * imult);
+  Blynk.virtualWrite(VIRTUAL_CURRENT, Irms * imult);
+  Blynk.virtualWrite(VIRTUAL_VOLTAGE, Vrms * vmult);
+  Blynk.virtualWrite(VIRTUAL_PF, powerFactor * phmult);
 
+}
+
+BLYNK_WRITE(V6) //Button Widget is writing to pin V6
+{
+  int pinData = param.asInt();
+  vmult = pinData / 100.0f;
+  Serial.print("V Mult: ");
+  Serial.println(vmult);
+  saveMultConfig();
+}
+
+BLYNK_WRITE(V7) //Button Widget is writing to pin V7
+{
+  int pinData = param.asInt();
+  imult = pinData / 100.0f;
+  Serial.print("I Mult: ");
+  Serial.println(imult);
+  saveMultConfig();
+}
+
+BLYNK_WRITE(V8) //Button Widget is writing to pin V8
+{
+  int pinData = param.asInt();
+  phmult = pinData / 100.0f;
+  Serial.print("Phase Mult: ");
+  Serial.println(phmult);
+  saveMultConfig();
 }
 
 void setLED(uint8_t red, uint8_t green, uint8_t blue)
