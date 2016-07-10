@@ -96,7 +96,7 @@ double offsetV;                          //Low-pass filter output
 double offsetI;                          //Low-pass filter output
 
 //Scaling for final calibration
-double vmult=1.0,imult=1.0,phmult=1.0;
+double vmult = 1.0, imult = 1.0, phmult = 1.0;
 
 double realPower,
        apparentPower,
@@ -330,25 +330,23 @@ void readMultConfig()
 
 void saveMultConfig()
 {
-  //save the custom parameters to FS
-  if (shouldSaveConfig) {
-    //Serial.println("saving config");
-    DynamicJsonBuffer jsonBuffer;
-    JsonObject& json = jsonBuffer.createObject();
-    json["vmult"] = vmult;
-    json["imult"] = imult;
-    json["phmult"] = phmult;
+  //save the multiplier parameters to FS
+  //Serial.println("saving config");
+  DynamicJsonBuffer jsonBuffer;
+  JsonObject& json = jsonBuffer.createObject();
+  json["vmult"] = vmult;
+  json["imult"] = imult;
+  json["phmult"] = phmult;
 
-    File configFile = SPIFFS.open("/mult.json", "w");
-    if (!configFile) {
-      //Serial.println("failed to open config file for writing");
-    }
-
-    json.printTo(Serial);
-    json.printTo(configFile);
-    configFile.close();
-    //end save
+  File configFile = SPIFFS.open("/mult.json", "w");
+  if (!configFile) {
+    //Serial.println("failed to open config file for writing");
   }
+
+  json.printTo(Serial);
+  json.printTo(configFile);
+  configFile.close();
+  //end save
 }
 
 void setup() {
@@ -407,15 +405,15 @@ void setup() {
 
 int lastTick = 0;
 void loop() {
-  
+
   Blynk.run(); // Initiates Blynk
   if ((millis() - lastTick > 10000)) { //60000 - 1 minute
     measureVI();
     lastTick = millis();
     Serial.print("Vrms:");
-    Serial.println(Vrms*vmult);
+    Serial.println(Vrms * vmult);
     Serial.print("Irms:");
-    Serial.println(Irms*imult);
+    Serial.println(Irms * imult);
     Serial.print("Power:");
     Serial.println(realPower * vmult * imult);
     Serial.print("p.f.:");
