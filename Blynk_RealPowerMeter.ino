@@ -272,9 +272,7 @@ void saveBlynkConfig()
     //Serial.println("saving config");
     DynamicJsonBuffer jsonBuffer;
     JsonObject& json = jsonBuffer.createObject();
-    json["vmult"] = vmult;
-    json["imult"] = vmult;
-    json["phmult"] = vmult;
+    json["auth"] = auth;
 
     File configFile = SPIFFS.open("/config.json", "w");
     if (!configFile) {
